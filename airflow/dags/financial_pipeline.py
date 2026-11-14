@@ -1,4 +1,4 @@
-"""DAG principal : Yahoo Finance -> Bronze -> Silver -> Data Lake -> Snowflake."""
+"""DAG principal : Yahoo Finance -> Bronze -> Silver -> Data Lake -> Snowflake -> Gold -> Qualité."""
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,13 +19,13 @@ default_args = {
 
 with DAG(
     dag_id="financial_pipeline",
-    description="Yahoo Finance -> Bronze -> Silver -> Data Lake -> Snowflake",
+    description="Yahoo Finance -> Bronze -> Silver -> Lake -> Snowflake -> Gold -> Qualité",
     start_date=datetime(2026, 11, 1),
     schedule="0 22 * * 1-5",   # lundi à vendredi, 22h UTC (après la clôture américaine)
     catchup=False,
     max_active_runs=1,
     default_args=default_args,
-    tags=["finance", "etl"],
+    tags=["finance", "etl", "elt"],
 ) as dag:
 
     extract = BashOperator(
@@ -68,4 +68,13 @@ with DAG(
         bash_command=f"cd {PROJECT_DIR} && python warehouse/load_to_snowflake.py",
     )
 
-  
+    build_gold = BashOperator(
+        task_id="build_gold_metrics",
+        bash_command=f"cd {PROJECT_DIR} && python warehouse/run_sql.py gold",
+    )
+
+    quality = BashOperator(
+        task_id="data_quality_checks",
+        bash_command=f"cd {PROJECT_DIR} && python warehouse/run_sql.py quality",
+    )
+
