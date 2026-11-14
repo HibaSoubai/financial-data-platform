@@ -1,5 +1,7 @@
 """Ingestion des cours boursiers depuis Yahoo Finance (couche Bronze)."""
 import logging
+import os
+import sys
 import time
 from pathlib import Path
 
@@ -44,15 +46,22 @@ def save_raw(df: pd.DataFrame, ticker: str) -> Path:
 
 
 def main() -> None:
+    force = os.getenv("FORCE_REFRESH", "0") == "1"
+    failures = []
     for ticker in TICKERS:
         path = RAW_DIR / f"{ticker}_prices.csv"
-        if path.exists():
+        if path.exists() and not force:
             logger.info("%s déjà présent, on passe", path)
             continue
         try:
             save_raw(fetch_prices(ticker), ticker)
         except Exception:
             logger.exception("Échec pour %s", ticker)
+            failures.append(ticker)
+
+    if failures:
+        logger.error("Tickers en échec : %s", failures)
+        sys.exit(1)  # code d'erreur : Airflow marquera la tâche en échec et fera un retry
 
 
 if __name__ == "__main__":
