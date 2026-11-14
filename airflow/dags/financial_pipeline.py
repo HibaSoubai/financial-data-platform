@@ -1,4 +1,4 @@
-"""DAG principal : Yahoo Finance -> Bronze -> Silver -> Data Lake."""
+"""DAG principal : Yahoo Finance -> Bronze -> Silver -> Data Lake -> Snowflake."""
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,7 +19,7 @@ default_args = {
 
 with DAG(
     dag_id="financial_pipeline",
-    description="Yahoo Finance -> Bronze -> Silver -> Data Lake",
+    description="Yahoo Finance -> Bronze -> Silver -> Data Lake -> Snowflake",
     start_date=datetime(2026, 11, 1),
     schedule="0 22 * * 1-5",   # lundi à vendredi, 22h UTC (après la clôture américaine)
     catchup=False,
@@ -63,3 +63,9 @@ with DAG(
         bash_command=f"cd {PROJECT_DIR} && python datalake/upload_to_adls.py",
     )
 
+    load_warehouse = BashOperator(
+        task_id="load_to_snowflake",
+        bash_command=f"cd {PROJECT_DIR} && python warehouse/load_to_snowflake.py",
+    )
+
+  
