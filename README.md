@@ -171,5 +171,3 @@ financial-data-platform/
 - **Cloud Azure :** le script d'envoi vers Azure Data Lake Storage Gen2 est écrit mais n'a pas été testé sur un compte réel. Le lac fonctionne en mode local.
 - **Tableau de bord :** non réalisé. Un rôle Snowflake en lecture seule (`FIN_BI_READER`) est prêt pour un outil de BI (Power BI, Metabase).
 - **Sources :** yfinance n'est pas une API officielle, et le compte gratuit d'Alpha Vantage est limité.
-- **Secrets :** les identifiants sont dans `.env`, ignoré par Git. En production : gestionnaire de secrets et authentification par paire de clés ou identité managée.
-- **Prévision :** expérience pédagogique. Les modèles décrivent des relations historiques, sans garantie sur l'avenir.
