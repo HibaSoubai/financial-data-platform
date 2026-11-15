@@ -1,4 +1,4 @@
-"""DAG principal : Yahoo Finance -> Bronze -> Silver -> Data Lake -> Snowflake -> Gold -> Qualité."""
+"""DAG principal : cours (yfinance) + macro (FRED) -> Bronze -> Silver -> Lake -> Snowflake -> Gold -> Qualité."""
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,9 +17,14 @@ default_args = {
     "retry_delay": timedelta(minutes=2),
 }
 
+
+def run(script: str, env: str = "") -> str:
+    return f"cd {PROJECT_DIR} && {env} python {script}".replace("&&  python", "&& python")
+
+
 with DAG(
     dag_id="financial_pipeline",
-    description="Yahoo Finance -> Bronze -> Silver -> Lake -> Snowflake -> Gold -> Qualité",
+    description="Cours + macro -> Bronze -> Silver -> Lake -> Snowflake -> Gold -> Qualité",
     start_date=datetime(2026, 11, 1),
     schedule="0 22 * * 1-5",   # lundi à vendredi, 22h UTC (après la clôture américaine)
     catchup=False,
@@ -28,9 +33,10 @@ with DAG(
     tags=["finance", "etl", "elt"],
 ) as dag:
 
+    # --- Branche 1 : cours boursiers ---
     extract = BashOperator(
         task_id="extract_yahoo_finance",
-        bash_command=f"cd {PROJECT_DIR} && FORCE_REFRESH=1 python ingestion/yahoo_finance.py",
+        bash_command=run("ingestion/yahoo_finance.py", "FORCE_REFRESH=1"),
     )
 
     @task
@@ -53,28 +59,27 @@ with DAG(
 
     validate = validate_raw_files()
 
-    clean = BashOperator(
-        task_id="clean_to_silver",
-        bash_command=f"cd {PROJECT_DIR} && python transformations/cleaning.py",
+    clean = BashOperator(task_id="clean_to_silver", bash_command=run("transformations/cleaning.py"))
+    upload = BashOperator(task_id="upload_to_lake", bash_command=run("datalake/upload_to_adls.py"))
+    load_warehouse = BashOperator(task_id="load_to_snowflake", bash_command=run("warehouse/load_to_snowflake.py"))
+
+    # Recoupement avec Alpha Vantage : informatif, sans nouvelle tentative (le quota gratuit est limité)
+    crosscheck = BashOperator(
+        task_id="crosscheck_alpha_vantage",
+        bash_command=f"cd {PROJECT_DIR} && python ingestion/alpha_vantage.py && python ingestion/compare_sources.py",
+        retries=0,
     )
 
-    upload = BashOperator(
-        task_id="upload_to_lake",
-        bash_command=f"cd {PROJECT_DIR} && python datalake/upload_to_adls.py",
-    )
+    # --- Branche 2 : indicateurs macroéconomiques ---
+    extract_fred = BashOperator(task_id="extract_fred", bash_command=run("ingestion/fred_api.py"))
+    clean_macro = BashOperator(task_id="clean_macro", bash_command=run("transformations/macro_cleaning.py"))
+    load_macro = BashOperator(task_id="load_macro", bash_command=run("warehouse/load_macro.py"))
 
-    load_warehouse = BashOperator(
-        task_id="load_to_snowflake",
-        bash_command=f"cd {PROJECT_DIR} && python warehouse/load_to_snowflake.py",
-    )
+    # --- Convergence : Gold puis qualité ---
+    build_gold = BashOperator(task_id="build_gold_metrics", bash_command=run("warehouse/run_sql.py gold"))
+    quality = BashOperator(task_id="data_quality_checks", bash_command=run("warehouse/run_sql.py quality"))
 
-    build_gold = BashOperator(
-        task_id="build_gold_metrics",
-        bash_command=f"cd {PROJECT_DIR} && python warehouse/run_sql.py gold",
-    )
-
-    quality = BashOperator(
-        task_id="data_quality_checks",
-        bash_command=f"cd {PROJECT_DIR} && python warehouse/run_sql.py quality",
-    )
-
+    extract >> validate >> clean >> upload >> load_warehouse
+    extract >> crosscheck
+    extract_fred >> clean_macro >> load_macro
+    [load_warehouse, load_macro] >> build_gold >> quality

@@ -77,3 +77,54 @@ SELECT
 FROM FIN_PLATFORM.ANALYTICS.FACT_DAILY_METRICS m
 JOIN FIN_PLATFORM.ANALYTICS.DIM_COMPANY c ON c.company_id = m.company_id
 GROUP BY c.company_id, c.ticker, c.company_name;
+-- 3) Cours + indicateurs macro tels que connus à chaque date (sans fuite d'information)
+CREATE OR REPLACE TABLE FIN_PLATFORM.ANALYTICS.GOLD_MARKET_MACRO AS
+WITH macro AS (
+    SELECT
+        f.series_id,
+        f.obs_value,
+        CASE m.frequency
+            WHEN 'mensuelle' THEN DATEADD('month', 2, d.full_date)
+            ELSE DATEADD('day', 1, d.full_date)
+        END AS available_from
+    FROM FIN_PLATFORM.ANALYTICS.FACT_MACRO_INDICATORS f
+    JOIN FIN_PLATFORM.ANALYTICS.DIM_DATE d ON d.date_id = f.date_id
+    JOIN FIN_PLATFORM.ANALYTICS.DIM_MACRO_SERIES m ON m.series_id = f.series_id
+),
+calendar AS (
+    SELECT DISTINCT date_id, full_date
+    FROM FIN_PLATFORM.ANALYTICS.FACT_DAILY_METRICS
+),
+macro_asof AS (
+    SELECT c.date_id, m.series_id, m.obs_value
+    FROM calendar c
+    JOIN macro m ON m.available_from <= c.full_date
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY c.date_id, m.series_id
+        ORDER BY m.available_from DESC
+    ) = 1
+),
+macro_wide AS (
+    SELECT
+        date_id,
+        MAX(IFF(series_id = 'DGS10',    obs_value, NULL)) AS us10y_yield,
+        MAX(IFF(series_id = 'VIXCLS',   obs_value, NULL)) AS vix,
+        MAX(IFF(series_id = 'FEDFUNDS', obs_value, NULL)) AS fed_funds_rate,
+        MAX(IFF(series_id = 'UNRATE',   obs_value, NULL)) AS unemployment_rate,
+        MAX(IFF(series_id = 'CPIAUCSL', obs_value, NULL)) AS cpi_index
+    FROM macro_asof
+    GROUP BY date_id
+)
+
+
+SELECT
+    c.ticker,
+    m.*,
+    w.us10y_yield,
+    w.vix,
+    w.fed_funds_rate,
+    w.unemployment_rate,
+    w.cpi_index
+FROM FIN_PLATFORM.ANALYTICS.FACT_DAILY_METRICS m
+JOIN FIN_PLATFORM.ANALYTICS.DIM_COMPANY c ON c.company_id = m.company_id
+LEFT JOIN macro_wide w ON w.date_id = m.date_id;

@@ -15,6 +15,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+class _QuietThirdParty(logging.Filter):
+    """Masque les logs INFO des bibliothèques tierces (le connecteur Snowflake est très bavard)."""
+
+    def filter(self, record):
+        return record.levelno >= logging.WARNING or record.name in ("__main__", __name__)
+
+
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_QuietThirdParty())
+
 load_dotenv()
 
 SILVER_FILE = Path("data/processed/stock_prices_silver.parquet")

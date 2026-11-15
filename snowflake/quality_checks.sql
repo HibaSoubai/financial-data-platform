@@ -43,5 +43,9 @@ FROM (
     SELECT 'donnees_trop_anciennes_sup_4_jours',
            IFF(DATEDIFF('day', MAX(full_date), CURRENT_DATE()) > 4, 1, 0)
     FROM FIN_PLATFORM.ANALYTICS.FACT_DAILY_METRICS
+        UNION ALL
+    SELECT 'gold_macro_nb_lignes_different',
+           ABS((SELECT COUNT(*) FROM FIN_PLATFORM.ANALYTICS.GOLD_MARKET_MACRO)
+             - (SELECT COUNT(*) FROM FIN_PLATFORM.ANALYTICS.FACT_DAILY_METRICS))
 )
 ORDER BY check_name;
