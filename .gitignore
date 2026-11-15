@@ -12,3 +12,4 @@ data/raw/*
 lake/
 .env
 airflow/logs/
+ml/outputs/*.csvml/outputs/*.csv
